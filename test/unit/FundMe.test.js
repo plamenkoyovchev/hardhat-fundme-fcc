@@ -1,7 +1,7 @@
 const { deployments, getNamedAccounts, ethers } = require("hardhat");
 const { assert, expect } = require("chai");
 
-describe("FundMe", async function () {
+describe("FundMe", function () {
 	let fundMeContract;
 	let deployer;
 	let mockV3Aggregator;
@@ -21,7 +21,7 @@ describe("FundMe", async function () {
 		mockV3Aggregator = await ethers.getContract("MockV3Aggregator", deployer);
 	});
 
-	describe("constructor", async function () {
+	describe("constructor", function () {
 		it("Sets price feed aggregator addresses correctly", async function () {
 			const priceFeedAddress = await fundMeContract.getPriceFeed();
 			assert.equal(priceFeedAddress, mockV3Aggregator.address);
@@ -33,7 +33,7 @@ describe("FundMe", async function () {
 		});
 	});
 
-	describe("fund", async function () {
+	describe("fund", function () {
 		it("Fails if you don't send enough ETH", async function () {
 			await expect(fundMeContract.fund()).to.be.revertedWithCustomError(
 				fundMeContract,
@@ -57,6 +57,55 @@ describe("FundMe", async function () {
 			await fundMeContract.fund({ value: sendValue });
 			const funderAddress = await fundMeContract.getFunder(0);
 			assert.equal(funderAddress, deployer);
+		});
+	});
+
+	describe("withdraw", function () {
+		beforeEach(async () => { 
+			await fundMeContract.fund({ value: sendValue });
+		});
+
+		it("Should withdraw from single account correctly", async function () {
+			// Arrange
+			const fundMeBalanceBeforeWithdraw = await fundMeContract.provider.getBalance(fundMeContract.address);
+			const deployerBalanceBeforeWithdraw = await fundMeContract.provider.getBalance(deployer);
+
+			// Act
+			const transactionResponse = await fundMeContract.withdraw();
+			const transactionReceipt = await transactionResponse.wait(1);
+
+			const { effectiveGasPrice, gasUsed } = transactionReceipt;
+			// BigNumber similar to effectiveGasPrice * gasUsed 
+			const gasCost = effectiveGasPrice.mul(gasUsed);
+
+			const fundMeBalanceAfterWithdraw = await fundMeContract.provider.getBalance(fundMeContract.address);
+			const deployerBalanceAfterWithdraw = await fundMeContract.provider.getBalance(deployer);
+
+			// Assert
+			assert.equal(fundMeBalanceAfterWithdraw, 0);
+			assert.equal(
+				// BigNumber similar to deployerBalanceBeforeWithdraw + fundMeBalanceBeforeWithdraw 
+				deployerBalanceBeforeWithdraw.add(fundMeBalanceBeforeWithdraw).toString(),
+				deployerBalanceAfterWithdraw.add(gasCost).toString()
+			);
+
+			// or alternative assert by subtracting the gas cost
+			assert.equal(
+				// BigNumber similar to (deployerBalanceBeforeWithdraw + fundMeBalanceBeforeWithdraw) - gasCost
+				(deployerBalanceBeforeWithdraw.add(fundMeBalanceBeforeWithdraw)).sub(gasCost).toString(),
+				deployerBalanceAfterWithdraw.toString()
+			);
+
+			// There shouldn't be any funders in s_funders array.
+			await expect(fundMeContract.getFunder(0)).to.be.reverted;
+		});
+
+		it("Should withdraw from multiple accounts corrrectly", async function () {
+			// TODO: add test
+		});
+
+		it("Should revert with FundMe__NotOwner if other account tries to withdraw the funds", async function () {
+			// TODO: add test
 		});
 	});
 });
