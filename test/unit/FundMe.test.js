@@ -12,7 +12,7 @@ describe("FundMe", function () {
 
 		// const accounts = await ethers.getSigners();
 		// const accountZero = accounts[0];
-		deployer = (await getNamedAccounts()).deployer; // deployer address
+		deployer = (await getNamedAccounts()).deployer; // deployer account
 
 		// this will execute all deploy scripts with the provided tag
 		await deployments.fixture(["all"]);
@@ -67,7 +67,7 @@ describe("FundMe", function () {
 
 		it("Should withdraw from single account correctly", async function () {
 			// Arrange
-			const fundMeBalanceBeforeWithdraw = await fundMeContract.provider.getBalance(fundMeContract.address);
+			const fundMeContractBalanceBeforeWithdraw = await fundMeContract.provider.getBalance(fundMeContract.address);
 			const deployerBalanceBeforeWithdraw = await fundMeContract.provider.getBalance(deployer);
 
 			// Act
@@ -78,21 +78,21 @@ describe("FundMe", function () {
 			// BigNumber similar to effectiveGasPrice * gasUsed 
 			const gasCost = effectiveGasPrice.mul(gasUsed);
 
-			const fundMeBalanceAfterWithdraw = await fundMeContract.provider.getBalance(fundMeContract.address);
+			const fundMeContractBalanceAfterWithdraw = await fundMeContract.provider.getBalance(fundMeContract.address);
 			const deployerBalanceAfterWithdraw = await fundMeContract.provider.getBalance(deployer);
 
 			// Assert
-			assert.equal(fundMeBalanceAfterWithdraw, 0);
+			assert.equal(fundMeContractBalanceAfterWithdraw, 0);
 			assert.equal(
 				// BigNumber similar to deployerBalanceBeforeWithdraw + fundMeBalanceBeforeWithdraw 
-				deployerBalanceBeforeWithdraw.add(fundMeBalanceBeforeWithdraw).toString(),
+				deployerBalanceBeforeWithdraw.add(fundMeContractBalanceBeforeWithdraw).toString(),
 				deployerBalanceAfterWithdraw.add(gasCost).toString()
 			);
 
 			// or alternative assert by subtracting the gas cost
 			assert.equal(
 				// BigNumber similar to (deployerBalanceBeforeWithdraw + fundMeBalanceBeforeWithdraw) - gasCost
-				(deployerBalanceBeforeWithdraw.add(fundMeBalanceBeforeWithdraw)).sub(gasCost).toString(),
+				(deployerBalanceBeforeWithdraw.add(fundMeContractBalanceBeforeWithdraw)).sub(gasCost).toString(),
 				deployerBalanceAfterWithdraw.toString()
 			);
 
@@ -100,12 +100,55 @@ describe("FundMe", function () {
 			await expect(fundMeContract.getFunder(0)).to.be.reverted;
 		});
 
-		it("Should withdraw from multiple accounts corrrectly", async function () {
-			// TODO: add test
+		it("Should withdraw from multiple accounts correctly", async function () {
+			// Arrange
+			// connect 7 accounts and fund the contract for each account
+			const accounts = await ethers.getSigners();
+			for (let i = 1; i <= 7; i++) {
+				const accountConnectedContract = await fundMeContract.connect(accounts[i]);
+				await accountConnectedContract.fund({ value: sendValue });
+			}
+
+			// Act
+			const fundMeContractBalanceBeforeWithdraw = await fundMeContract.provider.getBalance(fundMeContract.address);
+			const deployerBalanceBeforeWithdraw = await fundMeContract.provider.getBalance(deployer);
+
+			const transactionResponse = await fundMeContract.withdraw();
+			const transactionReceipt = await transactionResponse.wait(1);
+
+			const { effectiveGasPrice, gasUsed } = transactionReceipt;
+			const gasCost = effectiveGasPrice.mul(gasUsed);
+
+			const fundMeContractBalanceAfterWithdraw = await fundMeContract.provider.getBalance(fundMeContract.address);
+			const deployerBalanceAfterWithdraw = await fundMeContract.provider.getBalance(deployer);
+
+			// Assert
+			assert.equal(fundMeContractBalanceAfterWithdraw, 0);
+			assert.equal(
+				(deployerBalanceBeforeWithdraw.add(fundMeContractBalanceBeforeWithdraw)).sub(gasCost).toString(),
+				deployerBalanceAfterWithdraw.toString()
+			);
+
+			// There shouldn't be any funders after withdraw
+			await expect(fundMeContract.getFunder(0)).to.be.reverted;
+
+			for (let i = 1; i <= 7; i++) {
+				const { address: accountAddress } = accounts[i];
+				assert.equal(
+					await fundMeContract.getAddressToAmountFunded(accountAddress),
+					0
+				);
+			}
 		});
 
-		it("Should revert with FundMe__NotOwner if other account tries to withdraw the funds", async function () {
-			// TODO: add test
+		it("Should revert with FundMe__NotOwner if other account connects to the contract and tries to withdraw the funds", async function () {
+			// get account different from the deployer
+			const attackerAccount = (await ethers.getSigners())[1];
+
+			// connect anotherAccount to fundMeContract and try to withdraw
+			const attackerConnectedToFundMeContract = await fundMeContract.connect(attackerAccount);
+			await expect(attackerConnectedToFundMeContract.withdraw())
+				.to.be.revertedWithCustomError(fundMeContract, "FundMe__NotOwner");
 		});
 	});
 });
