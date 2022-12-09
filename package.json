@@ -1,4 +1,6 @@
 {
+  "name": "hardhat-fundme-fcc",
+  "author": "Plamen Yovchev",
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "npm:hardhat-deploy-ethers@^0.3.0-beta.13",
     "@chainlink/contracts": "^0.5.1",
@@ -9,5 +11,11 @@
   },
   "dependencies": {
     "dotenv": "^16.0.3"
+  },
+  "scripts": {
+    "test": "npx hardhat test",
+    "test:staging": "npx hardhat test --network goerli",
+    "format": "npx prettier --write .",
+    "coverage": "npx hardhat coverage"
   }
 }
